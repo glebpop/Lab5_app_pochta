@@ -1,0 +1,4 @@
+1|ivanov@mail.ru|petrov@gmail.com|Приветствие|123
+2|boss@company.com|ivanov@mail.ru|Отчет|Скинь отчет за квартал.
+5|spam@spamer.net|ivanov@mail.ru|Выигрыш|Поздравляем! Вы выиграли миллион.
+6|ivanov@mail.ru|boss@company.com|Re: Отчет|Отчет во вложении, проверьте.
