@@ -1,37 +1,30 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h> // подключаем для работы со строками (strlen, strcpy, strstr, strtok)
-#include "function.h"
+#include "function.h"//заголовочный файл
 
-
-// главная функция
 int main() {
-    Database db;
-    db.data = NULL;
-    db.count = 0;
+    EmailList db = { NULL, NULL, 0 }; //создается список в формате начало конец количество, null заглушка(место под будущий кусочек базы)
+    char filename[256];//место под название файла \0 - 256 место
 
-    char filename[4096]; // буфер под имя файла (динамика не нужна, это короткая строка)
-    printf("Введите имя файла базы (например, mail_db.txt): ");
-    fgets(filename, sizeof(filename), stdin); // читаем безопасно
-    filename[strcspn(filename, "\n")] = '\0'; // убираем \n
-
-    printf("Загрузка...\n");
-    int result = load_db(&db, filename);
-
-    // проверяем коды ошибок
-    if (result == -1) { 
-        printf("Ошибка: файл не найден.\n"); 
-        return 1; 
-    }
-    if (result == -2) { 
-        printf("Ошибка: не хватило памяти.\n"); 
-        return 1; 
+    printf("Введите имя файла базы (например, base.txt): ");
+    if (scanf("%255s", filename) != 1) { //функция вернет 1 при успешном выполнении
+        return 1;
     }
 
-    func(&db, filename); // запускаем меню, передаем базу и имя файла
+    if (load_db(&db, filename) != 0) {//там проверяется загрузилась ли база и тп
+        return 1;
+    }
 
-    free(db.data); // освобождаем память перед выходом
-    printf("Память очищена. Выход.\n");
+    func(&db, filename); //вызов рекурсии, выход 0
+
+    //освобождение цепочки узлов(их много) списка перед выходом
+    Email *current = db.first;//указатель на первый элемент
+    while (current != NULL) {//цикл пока значение не обнулится
+        Email *next = current->next;//перед удалением узла сохраняем адрес
+        free(current);
+        current = next;//переход к следующему элементу
+    }
+
     return 0;
 }
 

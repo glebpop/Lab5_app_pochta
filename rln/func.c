@@ -2,247 +2,252 @@
 #include <stdlib.h>
 #include <string.h>
 #include "function.h"
+//все кейсы реализованны как отдельные функции
+void clear_buffer() { //защита от зацикливания. чтобы буквы не сломали меню
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
 
+//добавление нового письма в конец списка
+void append_email(EmailList *list, int id, const char *sender, const char *recipient, const char *subject, const char *text) {
+    Email *node = (Email *)calloc(1, sizeof(Email));//создание письма
+    if (node == NULL) {
+        printf("Ошибка памяти.\n");
+        return;
+    }
 
-// функция меню
-void func(Database *db, const char *filename) {
-    int n;
+    node->id = id;//заполнение письма
+    strcpy(node->sender, sender);
+    strcpy(node->recipient, recipient);
+    strcpy(node->subject, subject);
+    strcpy(node->text, text);
+    node->next = NULL;
 
-    printf("\n--- МЕНЮ ---\n");
-    printf("1. Показать все\n2. Поиск\n3. Добавить\n4. Удалить\n5. Редактировать\n0. Выход\n");
+    if (list->first == NULL) {
+        list->first = node;//добавляется как бы 2 письма, ведь если такого не сделать будет падение
+        list->last = node;
+    } else {
+        list->last->next = node;//берется последний элемент, за ним привязывается новое письмо,  сдвигаем указатель на новый элемент
+        list->last = node;
+    }
+    list->n++;
+}
+
+//поиск узла по ID
+Email *get_email_by_id(EmailList *list, int id) {
+    Email *current = list->first;
+    while (current) {
+        if (current->id == id) {//ищет айдишник, как только нашли выводим
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
+
+//удаление узла по ID
+int del_email_by_id(EmailList *list, int id) {
+    if (list->first == NULL) {
+        return 0;
+    }
+
+    if (list->first->id == id) {//запоминаем удалемое письмо (в данном случае если удалено первое)
+        Email *temp = list->first;//происходит сдвиг, и обнуление конца если элемент один
+        list->first = temp->next;
+        if (list->first == NULL) {
+            list->last = NULL;
+        }
+        list->n--;
+        free(temp);
+        return 1;
+    }
+
+    Email *prev = list->first;//ищется айди стоящий перед удаленным
+    while (prev->next && prev->next->id != id) {//так сказать стрелка уже не 1-2-3 а 1-3
+        prev = prev->next;
+    }
+
+    if (prev->next == NULL) {
+        return 0;
+    }
+
+    Email *current = prev->next;//то что удаляется
+    prev->next = current->next;//стрелка перемещается в обход удаленного
+    if (current == list->last) {//сдвиг хвоста при удалении последнего
+        list->last = prev;
+    }
+    list->n--;
+    free(current);
+    return 1;
+}
+
+void print_emails(EmailList *list) {
+    if (!list->first) {
+        printf("База пуста.\n");//очередная проверка
+        return;
+    }
+    Email *current = list->first;//проходка по всем полям письма и его печать
+    while (current) {
+        printf("ID: %d | От: %s | Кому: %s | Тема: %s\n", current->id, current->sender, current->recipient, current->subject);
+        current = current->next;//переход к следующему
+    }
+}
+//можно воспользоваться * тоесть отключить опредленный поиск по отправителю/получателю
+void search_emails(EmailList *list) {
+    char sender[MAX_STR], recipient[MAX_STR];
+    int found = 0;//флаг: 0 — совпадений пока нет, 1 — хотя бы одно письмо найдено
+
+    printf("Отправитель (или *): ");
+    scanf("%2047s", sender);
+
+    printf("Получатель (или *): ");
+    scanf("%2047s", recipient);
+
+    Email *current = list->first;
+    while (current) {
+        int ok_s = (strcmp(sender, "*") == 0) || (strstr(current->sender, sender) != NULL); //сравнение, если * то да, если совпадение то да
+        int ok_r = (strcmp(recipient, "*") == 0) || (strstr(current->recipient, recipient) != NULL);
+
+        if (ok_s && ok_r) {
+            printf("ID: %d | От: %s | Кому: %s | Тема: %s\n", current->id, current->sender, current->recipient, current->subject);//все совпало то выводим
+            found = 1;
+        }
+        current = current->next;
+    }
+    if (found == 0) {
+        printf("Ничего не найдено.\n");
+    }
+}
+//создание нового письма
+void add_email_ui(EmailList *list, const char *filename) {
+    char sender[MAX_STR], recipient[MAX_STR], subject[MAX_STR], text[MAX_TEXT];
+
+    printf("Отправитель: ");
+    scanf("%2047s", sender);
+
+    printf("Получатель: ");
+    scanf("%2047s", recipient);
+
+    if (!is_valid_email(sender) || !is_valid_email(recipient)) {
+        printf("Ошибка: неверный email.\n");
+        return;
+    }
+
+    printf("Тема: ");
+    scanf(" %2047[^\n]", subject);
+
+    printf("Текст: ");
+    scanf(" %8191[^\n]", text);
+
+    int new_id = (list->last) ? (list->last->id + 1) : 1; //создание номера письма
+    append_email(list, new_id, sender, recipient, subject, text);////если список не пуст, берём ID последнего письма + 1; иначе начинаем с 1
+    save_db(list, filename);//сохранение в файл
+    printf("Письмо добавлено (ID: %d).\n", new_id);
+}
+//удаление письма, защита от некоректного
+void delete_email_ui(EmailList *list, const char *filename) {
+    int id;
+    printf("Введите ID для удаления: ");
+    if (scanf("%d", &id) != 1) {
+        clear_buffer();
+        printf("Неверный ввод.\n");
+        return;
+    }
+
+    if (del_email_by_id(list, id)) {//удаление
+        save_db(list, filename);
+        printf("Письмо удалено.\n");
+    } else {
+        printf("Письмо с ID %d не найдено.\n", id);
+    }
+}
+//редактирование письма
+void edit_email_ui(EmailList *list, const char *filename) {
+    int id;
+    printf("Введите ID для редактирования: ");
+    if (scanf("%d", &id) != 1) {//проерки
+        clear_buffer();
+        printf("Неверный ввод.\n");
+        return;
+    }
+
+    Email *item = get_email_by_id(list, id);//нахождение письма по айди
+    if (item == NULL) {
+        printf("Письмо с ID %d не найдено.\n", id);
+        return;
+    }
+
+    int field;
+    printf("Поле (1-Отправитель, 2-Получатель, 3-Тема, 4-Текст): ");
+    if (scanf("%d", &field) != 1) {
+        clear_buffer();
+        printf("Неверный выбор.\n");
+        return;
+    }
+
+    char buf[MAX_TEXT];
+    printf("Новое значение: ");
+    scanf(" %8191[^\n]", buf);
+
+    if (field == 1) {//заполнение письма
+        if (!is_valid_email(buf)) { printf("Неверный email.\n"); return; }
+        strcpy(item->sender, buf);
+    } else if (field == 2) {
+        if (!is_valid_email(buf)) { printf("Неверный email.\n"); return; }
+        strcpy(item->recipient, buf);
+    } else if (field == 3) {
+        strcpy(item->subject, buf);
+    } else if (field == 4) {
+        strcpy(item->text, buf);
+    } else {
+        printf("Нет такого поля.\n");
+        return;
+    }
+
+    save_db(list, filename);
+    printf("Обновлено.\n");
+}
+
+void func(EmailList *list, const char *filename) {
+    int choice = -1;
+//реализация интерфейса
+    printf("\n--- МЕНЮ (всего писем: %d) ---\n", list->n);
+    printf("1. Показать все\n");
+    printf("2. Поиск\n");
+    printf("3. Добавить\n");
+    printf("4. Удалить\n");
+    printf("5. Редактировать\n");
+    printf("0. Выход\n");
     printf("Выбор: ");
 
-    if (scanf("%d", &n) != 1) { // защита от ввода букв
-        while (getchar() != '\n'); // чистим буфер от мусора
-        n = -1; // ставим кривое значение
+    if (scanf("%d", &choice) != 1) {//чистка буфера(не вводите буквы пожалуйста)
+        clear_buffer();
+        choice = -1;
     }
-
-    switch (n) {
+//реализация свича и выборов
+    switch (choice) {
         case 0:
             printf("Выход...\n");
-            return; // тормозим рекурсию и выходим в main
-
+            return;
         case 1:
-            if (db->count == 0) printf("База пуста.\n");
-            for (int i = 0; i < db->count; i++) {
-                printf("ID: %d | От: %s | Кому: %s | Тема: %s\n",
-                       db->data[i].id, db->data[i].sender,
-                       db->data[i].recipient, db->data[i].subject);
-            }
+            print_emails(list);
             break;
-
-        case 2: {
-            char search_sender[256], search_recipient[256];
-            int found = 0;
-            printf("Отправитель (или *): "); scanf("%255s", search_sender);
-            printf("Получатель (или *): "); scanf("%255s", search_recipient);
-
-            for (int i = 0; i < db->count; i++) {
-                // если ввели * - пропускаем проверку, иначе ищем подстроку
-                int match_s = (strcmp(search_sender, "*") == 0) || (strstr(db->data[i].sender, search_sender) != NULL);
-                int match_r = (strcmp(search_recipient, "*") == 0) || (strstr(db->data[i].recipient, search_recipient) != NULL);
-
-                if (match_s && match_r) {
-                    printf("ID: %d | От: %s | Кому: %s | Тема: %s\n",
-                           db->data[i].id, db->data[i].sender, db->data[i].recipient, db->data[i].subject);
-                    found = 1;
-                }
-            }
-            if (found == 0) printf("Не найдено.\n");
+        case 2:
+            search_emails(list);
             break;
-        }
-
-        // 3. ДОБАВЛЕНИЕ
-        case 3: {
-            Email new_email; // временная структура под новое письмо
-            while (getchar() != '\n'); // вычищаем \n из буфера после scanf, иначе fgets пролетит мимо
-
-            printf("Отправитель: ");
-            fgets(new_email.sender, MAX_STR, stdin);
-            new_email.sender[strcspn(new_email.sender, "\n")] = '\0'; // отрезаем перенос строки
-
-            printf("Получатель: ");
-            fgets(new_email.recipient, MAX_STR, stdin);
-            new_email.recipient[strcspn(new_email.recipient, "\n")] = '\0';
-
-            // прогоняем адреса через нашу гордость
-            if (!is_valid_email(new_email.sender) || !is_valid_email(new_email.recipient)) {
-                printf("Ошибка: кривой email. Добавление отменено.\n");
-                break;
-            }
-
-            printf("Тема: ");
-            fgets(new_email.subject, MAX_STR, stdin);
-            new_email.subject[strcspn(new_email.subject, "\n")] = '\0';
-
-            printf("Текст письма: ");
-            fgets(new_email.text, MAX_TEXT, stdin);
-            new_email.text[strcspn(new_email.text, "\n")] = '\0';
-
-            // ищем самый жирный айдишник в базе, чтобы дать новому +1
-            int max_id = 0;
-            for (int i = 0; i < db->count; i++) {
-                if (db->data[i].id > max_id) {
-                    max_id = db->data[i].id;
-                }
-            }
-            new_email.id = max_id + 1;
-
-            // реаллочим массив под +1 письмо (через temp, чтоб не потерять старые данные если память кончится)
-            Email *temp = (Email*)realloc(db->data, (db->count + 1) * sizeof(Email));
-            if (temp == NULL) {
-                printf("Ошибка памяти, некуда пихать письмо!\n");
-                break;
-            }
-            db->data = temp;
-
-            // кладем письмо тупо в самый конец и плюсуем счетчик
-            db->data[db->count] = new_email;
-            db->count++;
-
-            save_db(db, filename); // сразу сохраняем в файл
-            printf("Письмо добавлено (ID: %d).\n", new_email.id);
+        case 3:
+            add_email_ui(list, filename);
             break;
-        }
-
-        // 4. УДАЛЕНИЕ
-        case 4: {
-            if (db->count == 0) {
-                printf("База и так пустая, удалять нечего.\n");
-                break;
-            }
-
-            int del_id;
-            printf("Введите ID письма для удаления: ");
-            if (scanf("%d", &del_id) != 1) {
-                while (getchar() != '\n'); // опять чистим буфер
-                printf("Неверный ввод ID.\n");
-                break;
-            }
-
-            // ищем где в массиве прячется этот айдишник
-            int found_idx = -1; // минус один = пока не нашли
-            for (int i = 0; i < db->count; i++) {
-                if (db->data[i].id == del_id) {
-                    found_idx = i;
-                    break;
-                }
-            }
-
-            if (found_idx == -1) {
-                printf("Письмо с ID %d не найдено.\n", del_id);
-                break;
-            }
-
-            // затираем удаляемое письмо, сдвигая все остальные влево (айдишники не трогаем)
-            for (int i = found_idx; i < db->count - 1; i++) {
-                db->data[i] = db->data[i + 1];
-            }
-            db->count--; // писем стало на одно меньше
-
-            // подрезаем лишнюю память в конце
-            if (db->count == 0) {
-                free(db->data); // если удалили вообще всё - чистим полностью
-                db->data = NULL;
-            } else {
-                Email *temp = (Email*)realloc(db->data, db->count * sizeof(Email));
-                if (temp != NULL) {
-                    db->data = temp;
-                }
-            }
-
-            save_db(db, filename);
-            printf("Письмо с ID %d удалено.\n", del_id);
+        case 4:
+            delete_email_ui(list, filename);
             break;
-        }
-
-        // 5. РЕДАКТИРОВАНИЕ
-        case 5: {
-            if (db->count == 0) {
-                printf("База пуста.\n");
-                break;
-            }
-
-            int edit_id;
-            printf("Введите ID письма для редактирования: ");
-            if (scanf("%d", &edit_id) != 1) {
-                while (getchar() != '\n');
-                printf("Неверный ввод ID.\n");
-                break;
-            }
-
-            // ищем индекс нужной структуры
-            int idx = -1;
-            for (int i = 0; i < db->count; i++) {
-                if (db->data[i].id == edit_id) {
-                    idx = i;
-                    break;
-                }
-            }
-
-            if (idx == -1) {
-                printf("Письмо с ID %d не найдено.\n", edit_id);
-                break;
-            }
-
-            int field;
-            printf("Какое поле поменять? (1 - Отправитель, 2 - Получатель, 3 - Тема, 4 - Текст): ");
-            if (scanf("%d", &field) != 1) {
-                while (getchar() != '\n');
-                printf("Неверный выбор.\n");
-                break;
-            }
-            while (getchar() != '\n'); // убираем \n перед fgets
-
-            char buf[MAX_TEXT]; // буфер под новое значение
-            switch (field) {
-                case 1:
-                    printf("Новый отправитель: ");
-                    fgets(buf, MAX_STR, stdin);
-                    buf[strcspn(buf, "\n")] = '\0';
-                    if (is_valid_email(buf)) {
-                        strcpy(db->data[idx].sender, buf); // заменяем поле в структуре
-                    } else {
-                        printf("Брак: кривой email. Отмена.\n");
-                    }
-                    break;
-                case 2:
-                    printf("Новый получатель: ");
-                    fgets(buf, MAX_STR, stdin);
-                    buf[strcspn(buf, "\n")] = '\0';
-                    if (is_valid_email(buf)) {
-                        strcpy(db->data[idx].recipient, buf);
-                    } else {
-                        printf("Брак: кривой email. Отмена.\n");
-                    }
-                    break;
-                case 3:
-                    printf("Новая тема: ");
-                    fgets(buf, MAX_STR, stdin);
-                    buf[strcspn(buf, "\n")] = '\0';
-                    strcpy(db->data[idx].subject, buf);
-                    break;
-                case 4:
-                    printf("Новый текст: ");
-                    fgets(buf, MAX_TEXT, stdin);
-                    buf[strcspn(buf, "\n")] = '\0';
-                    strcpy(db->data[idx].text, buf);
-                    break;
-                default:
-                    printf("Нет такого поля.\n");
-                    break;
-            }
-
-            save_db(db, filename);
-            printf("Обновлено.\n");
+        case 5:
+            edit_email_ui(list, filename);
             break;
-        }
-
         default:
-            printf("Неверный ввод! Введите 0-5.\n"); // на месте
+            printf("Неверный пункт меню.\n");
             break;
     }
 
-    // рекурсивно вызываем меню снова, чтобы прога не закрывалась
-    func(db, filename);
+    func(list, filename);
 }
